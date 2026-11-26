@@ -13,3 +13,6 @@ Verify authenticated staff and manager browser journeys, cross-account isolation
 
 ## Manager activation and staff roster
 Reserved inactive accounts must be activated using the account:create command with a privately chosen password. The manager can subsequently activate reserved staff or create additional staff via Staff accounts. Do not create a second manager using the browser. Confirm staff roster and operational fields before release.
+
+### Multiple WhatsApp recipients
+Apply db/002_notification_results.sql before deploying. Set WA_RECIPIENTS to comma-separated international numbers as a server-only environment variable. Each distinct recipient is sent one template request. Per-recipient API acceptance is recorded by recipient slot and provider message ID; phone numbers are not included in report records. Delivery confirmation webhooks and durable retries remain pending. Set WA_TEMPLATE only to an approved Meta template.

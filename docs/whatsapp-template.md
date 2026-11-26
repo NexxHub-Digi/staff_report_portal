@@ -4,3 +4,5 @@ Name: `stj_report_notification` · language `en_US` · category Utility (subject
 STJ Family Home — new {{1}}. Reference: {{2}}. Submitted by: {{3}}. {{4}}. Portal: {{5}}. Please review when available.
 
 Example values: Daily operations report; DAI-EXAMPLE; Staff member; Sign in to review the report; https://example.com/. Use Meta Business Manager to submit for approval and configure sender and recipient opt-in. Never commit credentials or report contents. API acceptance does not establish delivery.
+
+Set `WA_RECIPIENTS` privately on the host for multiple opted-in recipients. Each recipient must be distinct from the sender number and eligible to receive messages. Test each destination separately.

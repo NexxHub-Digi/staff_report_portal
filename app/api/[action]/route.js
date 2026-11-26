@@ -1,3 +1,4 @@
+import {sendWhatsApp} from '../../../lib/whatsapp.js';
 import {neon} from '@neondatabase/serverless';
 import {randomBytes,createHash,timingSafeEqual,pbkdf2} from 'node:crypto';
 import {promisify} from 'node:util';
@@ -13,17 +14,6 @@ const cookie='stj_session',opts={httpOnly:true,secure:process.env.NODE_ENV==='pr
 async function passwordOK(p,stored){try{const [salt,expected]=stored.split('$');if(!/^[a-f0-9]{32}$/i.test(salt)||!/^[a-f0-9]{64}$/i.test(expected))return false;const result=await promisify(pbkdf2)(p,Buffer.from(salt,'hex'),600000,32,'sha256');return timingSafeEqual(result,Buffer.from(expected,'hex'))}catch{return false}}
 async function session(req,q){const value=req.cookies.get(cookie)?.value;if(!value||!/^[a-f0-9]{64}$/.test(value))return null;const [u]=await q('SELECT a.username,a.name,a.role FROM staff_sessions s JOIN staff_accounts a USING(username) WHERE s.token_hash=$1 AND s.expires_at>now() AND a.active',[hash(value)]);return u||null}
 const publicUser=u=>({name:u.name,role:u.role});
-async function sendWhatsApp(report){
- const e=process.env,keys=['WA_ACCESS_TOKEN','WA_PHONE_NUMBER_ID','WA_RECIPIENT','WA_TEMPLATE','WA_GRAPH_VERSION','STJ_PUBLIC_URL'];
- if(!keys.every(k=>e[k]))return ['Not configured',null];
- if(!/^v\d+\.\d+$/.test(e.WA_GRAPH_VERSION)||!/^\d+$/.test(e.WA_PHONE_NUMBER_ID)||!/^[1-9]\d{7,14}$/.test(e.WA_RECIPIENT))return ['Invalid WhatsApp configuration',null];
- const labels={daily:'Daily operations report',requisition:'Requisition request',incident:'Incident and maintenance report'};
- const values=[labels[report.type],report.id,report.staff,'Sign in to review the report',e.STJ_PUBLIC_URL.replace(/\/$/,'')+'/'];
- try{if(new URL(e.STJ_PUBLIC_URL).protocol!=='https:')return ['Invalid portal URL',null];
- const result=await fetch('https://graph.facebook.com/'+e.WA_GRAPH_VERSION+'/'+e.WA_PHONE_NUMBER_ID+'/messages',{method:'POST',headers:{Authorization:'Bearer '+e.WA_ACCESS_TOKEN,'Content-Type':'application/json'},body:JSON.stringify({messaging_product:'whatsapp',to:e.WA_RECIPIENT,type:'template',template:{name:e.WA_TEMPLATE,language:{code:e.WA_LANGUAGE||'en_US'},components:[{type:'body',parameters:values.map(text=>({type:'text',text}))}]}}),signal:AbortSignal.timeout(10000)});
- const json=await result.json();if(!result.ok||!json.messages?.[0]?.id)return ['Send failed',null];return ['Accepted by WhatsApp API',json.messages[0].id];
- }catch{return ['Send failed or unconfirmed',null]}
-}
 export async function GET(req,{params}){try{
  const {action}=await params;const q=db();const u=await session(req,q);
  if(!u)return err('Sign in required.',401);
@@ -65,8 +55,9 @@ export async function POST(req,{params}){try{
  let data;try{data=validate(body.type,body.data)}catch(e){return err(e.message,400)}
  const id=body.type.slice(0,3).toUpperCase()+'-'+randomBytes(8).toString('hex').toUpperCase();const status=body.type==='requisition'?'Pending':'Submitted';
  await q('INSERT INTO reports(id,type,username,staff,data,status) VALUES($1,$2,$3,$4,$5::jsonb,$6)',[id,body.type,u.username,u.name,JSON.stringify(data),status]);
- const [notification,waId]=await sendWhatsApp({id,type:body.type,staff:u.name});
- try{await q('UPDATE reports SET notification=$1,wa_id=$2 WHERE id=$3',[notification,waId,id])}catch{return reply({id,notification:'Saved; notification status unconfirmed'},201)}
+ const {notification,results}=await sendWhatsApp({id,type:body.type,staff:u.name});
+ const waId=results.find(r=>r.message_id)?.message_id||null;
+ try{await q('UPDATE reports SET notification=$1,wa_id=$2,notification_results=$3::jsonb WHERE id=$4',[notification,waId,JSON.stringify(results),id])}catch{return reply({id,notification:'Saved; notification status unconfirmed'},201)}
  return reply({id,notification},201)
  }
  if(action==='decision'){
