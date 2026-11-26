@@ -10,3 +10,6 @@ Next.js App Router, Neon PostgreSQL, Vercel primary, Netlify optional backup, an
 
 ## Release gate
 Verify authenticated staff and manager browser journeys, cross-account isolation, malicious input, origin handling behind each proxy, concurrent approvals, database backup/recovery, dependency audit, and actual WhatsApp delivery before sharing with staff. Notification failures do not roll back saved reports. Durable retries, webhook delivery status, account administration UI, attachment uploads and idempotent submission remain pending.
+
+## Manager activation and staff roster
+Reserved inactive accounts must be activated using the account:create command with a privately chosen password. The manager can subsequently activate reserved staff or create additional staff via Staff accounts. Do not create a second manager using the browser. Confirm staff roster and operational fields before release.

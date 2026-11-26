@@ -28,6 +28,7 @@ export async function GET(req,{params}){try{
  const {action}=await params;const q=db();const u=await session(req,q);
  if(!u)return err('Sign in required.',401);
  if(action==='me')return reply(publicUser(u));
+ if(action==='staff-accounts'){if(u.role!=='manager')return err('Manager access required.',403);return reply({accounts:await q('SELECT username,name,role,active FROM staff_accounts ORDER BY role,username')})}
  if(action==='records'){const fields='SELECT id,type,staff,data,status,notification,created_at FROM reports';const records=u.role==='manager'?await q(fields+' ORDER BY created_at DESC LIMIT 500'):await q(fields+' WHERE username=$1 ORDER BY created_at DESC LIMIT 500',[u.username]);return reply({records})}
  return err('Not found.',404);
  }catch{return err('Service unavailable.',503)}}
@@ -50,6 +51,31 @@ export async function POST(req,{params}){try{
  const response=reply(publicUser(u));response.cookies.set(cookie,token,opts);return response;
  }
  const u=await session(req,q);if(!u)return err('Sign in required.',401);
+ if(action==='staff-account'){
+ if(u.role!=='manager')return err('Manager access required.',403);
+ const username=typeof body.username==='string'?body.username.trim().toLowerCase():'';
+ const name=typeof body.name==='string'?body.name.trim():'';
+ if(!/^[a-z0-9_.-]{1,80}$/.test(username)||!name||name.length>120||typeof body.password!=='string'||body.password.length<12||body.password.length>128)return err('Invalid account details. Use a password of at least 12 characters.',400);
+ const salt=randomBytes(16);const digest=await promisify(pbkdf2)(body.password,salt,600000,32,'sha256');
+ const rows=await q("INSERT INTO staff_accounts(username,name,role,password_hash,active) VALUES($1,$2,'staff',$3,true) ON CONFLICT(username) DO UPDATE SET name=excluded.name,password_hash=excluded.password_hash,active=true WHERE staff_accounts.role='staff' AND NOT staff_accounts.active RETURNING username",[username,name,salt.toString('hex')+'{await q('DELETE FROM staff_sessions WHERE token_hash=$1',[hash(req.cookies.get(cookie).value)]);const r=reply({ok:true});r.cookies.set(cookie,'',{...opts,maxAge:0});return r}
+ if(action==='submit'){
+ let data;try{data=validate(body.type,body.data)}catch(e){return err(e.message,400)}
+ const id=body.type.slice(0,3).toUpperCase()+'-'+randomBytes(8).toString('hex').toUpperCase();const status=body.type==='requisition'?'Pending':'Submitted';
+ await q('INSERT INTO reports(id,type,username,staff,data,status) VALUES($1,$2,$3,$4,$5::jsonb,$6)',[id,body.type,u.username,u.name,JSON.stringify(data),status]);
+ const [notification,waId]=await sendWhatsApp({id,type:body.type,staff:u.name});
+ try{await q('UPDATE reports SET notification=$1,wa_id=$2 WHERE id=$3',[notification,waId,id])}catch{return reply({id,notification:'Saved; notification status unconfirmed'},201)}
+ return reply({id,notification},201)
+ }
+ if(action==='decision'){
+ if(u.role!=='manager')return err('Manager access required.',403);
+ if(typeof body.id!=='string'||!['Approved','Declined'].includes(body.status))return err('Invalid decision.',400);
+ const rows=await q("UPDATE reports SET status=$1,decided_by=$2,decided_at=now() WHERE id=$3 AND type='requisition' AND status='Pending' RETURNING id",[body.status,u.username,body.id]);return rows.length?reply({ok:true}):err('Request is not pending.',409);
+ }
+ return err('Not found.',404);
+ }catch{return err('Service unavailable.',503)}}
++digest.toString('hex')]);
+ return rows.length?reply({ok:true},201):err('Account already active or reserved.',409);
+ }
  if(action==='logout'){await q('DELETE FROM staff_sessions WHERE token_hash=$1',[hash(req.cookies.get(cookie).value)]);const r=reply({ok:true});r.cookies.set(cookie,'',{...opts,maxAge:0});return r}
  if(action==='submit'){
  let data;try{data=validate(body.type,body.data)}catch(e){return err(e.message,400)}
