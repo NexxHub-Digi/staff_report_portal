@@ -1,3 +1,4 @@
+import {activateManager} from '../../../lib/activation.js';
 import {sendWhatsApp} from '../../../lib/whatsapp.js';
 import {neon} from '@neondatabase/serverless';
 import {randomBytes,createHash,timingSafeEqual,pbkdf2} from 'node:crypto';
@@ -30,6 +31,14 @@ export async function POST(req,{params}){try{
  let body;try{body=JSON.parse(raw)}catch{return err('Invalid JSON.',400)}
  if(!body||typeof body!=='object'||Array.isArray(body))return err('Invalid request.',400);
  const q=db();
+ if(action==='activate-manager'){
+ const expected=process.env.STJ_MANAGER_SETUP_TOKEN_HASH;
+ if(!expected)return err('Activation unavailable.',403);
+ const [limit]=await q("INSERT INTO staff_login_limits(key,attempts,window_start) VALUES('manager-activation',1,now()) ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN staff_login_limits.window_start<now()-interval '15 minutes' THEN 1 ELSE staff_login_limits.attempts+1 END,window_start=CASE WHEN staff_login_limits.window_start<now()-interval '15 minutes' THEN now() ELSE staff_login_limits.window_start END RETURNING attempts");
+ if(limit.attempts>10)return err('Too many attempts. Try again later.',429);
+ const result=await activateManager(q,body,expected);
+ return result.ok?reply({ok:true}):err(result.error,result.status);
+ }
  if(action==='login'){
  const username=typeof body.username==='string'?body.username.trim().toLowerCase():'';
  if(!/^[a-z0-9_.-]{1,80}$/.test(username)||typeof body.password!=='string'||body.password.length>1024)return err('Invalid credentials.',401);
